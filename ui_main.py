@@ -4,7 +4,7 @@
 """
 from datetime import datetime as dt
 from pathlib import Path
-from loguru import logger
+from logger_config import logger
 from tkinter import ttk
 import tkinter as tk
 import threading

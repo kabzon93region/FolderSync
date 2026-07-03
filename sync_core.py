@@ -6,18 +6,7 @@ import os
 import shutil
 from datetime import datetime
 from fnmatch import fnmatch
-from loguru import logger
-
-# Убеждаемся, что logger доступен (он должен быть инициализирован в main.py)
-# Если logger не инициализирован, создадим базовую конфигурацию
-try:
-    logger.info("sync_core: logger доступен")
-except:
-    # Если logger не настроен, настраиваем базовую конфигурацию
-    import sys
-    logger.remove()  # Удаляем стандартный handler
-    logger.add(sys.stderr, level="DEBUG")
-    logger.add("./logs/log.log", format="{time:DD.MM.YYYY HH:mm:ss:(x)} - {level} - {message}", level="DEBUG", rotation="25 MB", compression="zip")
+from logger_config import logger
 
 
 def is_excluded(source_path: str, name: str, exclude_patterns):

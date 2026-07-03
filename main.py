@@ -2,7 +2,7 @@
 Точка входа приложения FolderSync.
 Инициализирует логирование и запускает главное окно.
 """
-from loguru import logger
+from logger_config import logger
 from config_manager import ConfigManager
 from ui_main import MainWindow
 

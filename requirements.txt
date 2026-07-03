@@ -1,1 +1,2 @@
-loguru
+# Зависимости не требуются — используется только стандартная библиотека Python
+# (tkinter, logging, os, shutil, threading, queue и т.д.)

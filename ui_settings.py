@@ -4,7 +4,7 @@
 """
 from tkinter import filedialog, messagebox
 from pathlib import Path
-from loguru import logger
+from logger_config import logger
 import tkinter as tk
 
 from config_manager import ConfigManager, parse_config_line

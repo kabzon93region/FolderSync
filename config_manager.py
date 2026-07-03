@@ -3,7 +3,7 @@
 Обеспечивает загрузку, сохранение и парсинг файла config.cfg.
 """
 import os
-from loguru import logger
+from logger_config import logger
 
 
 def parse_config_line(line: str):

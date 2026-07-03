@@ -9,41 +9,42 @@
 - Маски исключений для файлов и папок (`*.tmp`, `__pycache__`, `cache/*`)
 - Включение/отключение отдельных пар без удаления из списка
 - Опциональное удаление исходных файлов после синхронизации
-- Подробное логирование в файл с ротацией и сжатием
+- Подробное логирование в файл с ротацией
 - GUI на tkinter с прогресс-баром и окном настроек
+- Многопоточность: GUI в главном потоке, синхронизация в фоновом
 
 ## Требования
 
 - **Python** 3.10+
 - **ОС** Windows
-- **Зависимости**: `loguru` (устанавливается автоматически)
+- **Зависимости**: нет (только стандартная библиотека Python)
 
 ## Установка и запуск
 
-### Быстрый старт (рекомендуется)
+### Готовый exe (рекомендуется)
+
+Скачайте `FolderSync.exe` из [Releases](https://github.com/kabzon93region/FolderSync/releases) — Python не требуется.
+
+### Из исходников
 
 1. Склонируйте репозиторий:
 
 ```bash
-git clone https://github.com/kabzon93region/bkp_copy.git
-cd bkp_copy
+git clone https://github.com/kabzon93region/FolderSync.git
+cd FolderSync
 ```
 
-2. Запустите `setup_venv.cmd` — он создаст виртуальное окружение и установит зависимости.
+2. Запустите `setup_venv.cmd` — создаст виртуальное окружение.
 
 3. Запустите приложение:
    - `run_sync.cmd` — с консолью (для отладки)
    - `run_sync_silent.cmd` — без консоли
 
-### Ручная установка
+### Ручной запуск
 
 ```bash
-python -m venv venv
-venv\Scripts\python.exe -m pip install -r requirements.txt
 venv\Scripts\python.exe main.py
 ```
-
-> **Примечание:** скрипты запуска используют Python из venv напрямую (`venv\Scripts\python.exe`) вместо активации через `activate.bat`. Это надёжнее, т.к. не зависит от PATH и работает в любых контекстах запуска.
 
 ## Конфигурация
 
@@ -70,15 +71,17 @@ D:\Downloads ===>>> E:\Archive\Downloads
 
 ```
 main.py              # Точка входа
+logger_config.py     # Логирование (стандартный logging)
 config_manager.py    # Загрузка/сохранение config.cfg
 sync_core.py         # Ядро синхронизации
-ui_main.py           # Главное окно
+ui_main.py           # Главное окно (многопоточность)
 ui_settings.py       # Окно настроек
-requirements.txt     # Зависимости
+requirements.txt     # Зависимости (пусто — только stdlib)
 config.cfg           # Конфигурация (не в репозитории)
 setup_venv.cmd       # Создание venv
 run_sync.cmd         # Запуск с консолью
 run_sync_silent.cmd  # Запуск без консоли
+build_exe.cmd        # Сборка exe через PyInstaller
 ```
 
 ## Лицензия
