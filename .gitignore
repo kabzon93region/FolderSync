@@ -1,15 +1,15 @@
-# Visual Studio 2015 user specific files
-venv/*
-.idea/*
-dist/*
-build/*
-output/*
-f1/*
-f2/*
-logs/*
-
-# Binary Files
-#.idea/*
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.idea/
+.cursor/
+dist/
+build/
+output/
+f1/
+f2/
+logs/
 main.ico
 main.spec
 config.cfg
