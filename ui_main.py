@@ -7,7 +7,8 @@ from pathlib import Path
 from loguru import logger
 from tkinter import ttk
 import tkinter as tk
-import shutil
+import threading
+import queue
 import time
 
 from config_manager import ConfigManager, parse_config_line
@@ -17,7 +18,7 @@ from ui_settings import SettingsWindow
 
 class MainWindow:
     """Класс главного окна приложения"""
-    
+
     # Константы стиля
     BG_COLOR = '#1E1F22'
     ACT_BG_COLOR = '#575A63'
@@ -28,52 +29,41 @@ class MainWindow:
     FONT = ('Consolas', 10)
     WINDOW_WIDTH = 640
     WINDOW_HEIGHT = 300
-    
+    POLL_INTERVAL_MS = 50
+
     def __init__(self, config_manager: ConfigManager):
-        """
-        Инициализация главного окна.
-        
-        Args:
-            config_manager: Экземпляр ConfigManager для работы с конфигурацией
-        """
         self.config_manager = config_manager
         self.is_syncing = False
-        self.should_stop = False
-        
-        # Создание главного окна
+        self._stop_event = threading.Event()
+        self._msg_queue = queue.Queue()
+        self._sync_thread = None
+
         self.window = tk.Tk()
         self._setup_window()
-        
-        # Создание элементов интерфейса
         self._create_widgets()
-        
-        # Ссылка на окно настроек (будет создано при открытии)
         self.settings_window = None
-    
+
     def _setup_window(self):
-        """Настройка параметров окна"""
         xspos = (self.window.winfo_screenwidth() - self.WINDOW_WIDTH) / 2
         yspos = (self.window.winfo_screenheight() - self.WINDOW_HEIGHT) / 2
         self.window.protocol("WM_DELETE_WINDOW", self._on_close)
         self.window.title(self.TITLE)
         self.window.geometry("%dx%d+%d+%d" % (self.WINDOW_WIDTH, self.WINDOW_HEIGHT, xspos, yspos))
         self.window.resizable(False, False)
-        
+
         try:
             self.window.iconbitmap(self.ICON_PATH)
         except:
             logger.error(f"не найден файл иконки в папке запуска программы {Path(self.ICON_PATH).absolute()}")
-        
+
         self.window.config(bg=self.BG_COLOR)
-        
+
         for i in range(5):
             self.window.grid_rowconfigure(i, minsize=60)
             if i <= 5:
                 self.window.grid_columnconfigure(i, minsize=128)
-    
+
     def _create_widgets(self):
-        """Создание элементов интерфейса"""
-        # Текстовая область для логов
         self.textarea = tk.Text(
             self.window,
             bg=self.BG_COLOR,
@@ -82,8 +72,7 @@ class MainWindow:
             height=1
         )
         self.textarea.grid(row=2, column=0, sticky='nwes', columnspan=5, rowspan=3)
-        
-        # Чекбокс удаления файлов
+
         self.deleting = tk.BooleanVar()
         self.deleting.set(False)
         deleting_checkbutton = tk.Checkbutton(
@@ -97,12 +86,10 @@ class MainWindow:
             font=self.FONT
         )
         deleting_checkbutton.grid(row=0, column=0, sticky='nwes', columnspan=3)
-        
-        # Прогрессбар
+
         self.prbr = ttk.Progressbar(orient="horizontal", length=100, value=0)
         self.prbr.grid(row=1, column=0, sticky='nwes', columnspan=3)
-        
-        # Кнопка "Старт"
+
         self.btn_start = tk.Button(
             self.window,
             text="Старт",
@@ -114,8 +101,7 @@ class MainWindow:
             command=self._on_start_click
         )
         self.btn_start.grid(row=0, column=4, sticky='nwes', columnspan=1, rowspan=2)
-        
-        # Кнопка "Настройки"
+
         self.btn_settings = tk.Button(
             self.window,
             text="Настройки",
@@ -127,155 +113,146 @@ class MainWindow:
             command=self._on_settings_click
         )
         self.btn_settings.grid(row=0, column=3, sticky='nwes', columnspan=1, rowspan=2)
-    
+
     def _on_start_click(self):
-        """Обработчик нажатия кнопки Старт/Стоп"""
         if not self.is_syncing:
             self._start_sync()
         else:
             self._stop_sync()
-    
+
     def _on_settings_click(self):
-        """Обработчик нажатия кнопки Настройки"""
         self.btn_settings.config(state="disabled")
         self.settings_window = SettingsWindow(self.window, self.config_manager, self._on_settings_closed)
-    
+
     def _on_settings_closed(self):
-        """Обработчик закрытия окна настроек"""
         self.btn_settings.config(state="normal")
-        # Перезагружаем конфигурацию на случай изменений
         self.config_manager.load_config()
-    
+
+    # --- Потокобезопасная доставка сообщений в GUI ---
+
+    def _put_msg(self, msg_type, **kwargs):
+        """Потокобезопасная отправка сообщения в очередь."""
+        self._msg_queue.put((msg_type, kwargs))
+
+    def _poll_queue(self):
+        """Опрос очереди сообщений из главного потока (через after)."""
+        try:
+            while True:
+                msg_type, data = self._msg_queue.get_nowait()
+
+                if msg_type == "log":
+                    self._append_log(data["text"])
+
+                elif msg_type == "progress":
+                    self.prbr.configure(value=data["value"])
+
+                elif msg_type == "done":
+                    self._on_sync_finished(data["elapsed"])
+                    return
+
+                elif msg_type == "error":
+                    self._append_log(f"!ОШИБКА! {data['text']}")
+        except queue.Empty:
+            pass
+
+        if self.is_syncing:
+            self.window.after(self.POLL_INTERVAL_MS, self._poll_queue)
+
+    def _append_log(self, text):
+        now = dt.now().strftime("%H:%M:%S:%f")
+        self.textarea.insert('end', f"\n{now}: {text}\n")
+        self.textarea.see('end')
+
+    def _on_sync_finished(self, elapsed):
+        self.is_syncing = False
+        self.btn_start.config(text="Старт")
+        self.btn_settings.config(state="normal")
+        self._append_log(f"Синхронизация списка завершена за {elapsed:.1f} секунд")
+        logger.info(f"Синхронизация списка завершена за {elapsed:.1f} секунд")
+        self.prbr.configure(value=0)
+
+    # --- Запуск / остановка синхронизации ---
+
     def _start_sync(self):
-        """Запуск синхронизации"""
         self.is_syncing = True
-        self.should_stop = False
+        self._stop_event.clear()
         self.btn_start.config(text="Стоп")
         self.btn_settings.config(state="disabled")
-        
-        # Принудительное обновление GUI перед началом
-        self.window.update_idletasks()
-        self.window.update()
-        
+        self.textarea.delete('1.0', 'end')
+
+        self._sync_thread = threading.Thread(target=self._sync_worker, daemon=True)
+        self._sync_thread.start()
+        self.window.after(self.POLL_INTERVAL_MS, self._poll_queue)
+
+    def _stop_sync(self):
+        self._stop_event.set()
+        self._put_msg("log", text="Остановка синхронизации...")
+
+    def _sync_worker(self):
+        """Рабочий поток: выполняет всю синхронизацию."""
         start_timer = time.time()
+
+        def progress_callback(progress, message):
+            self._put_msg("progress", value=progress)
+            if message:
+                self._put_msg("log", text=message)
+
+        def stop_check():
+            return self._stop_event.is_set()
+
         config_list = self.config_manager.get_config_list()
-        total_pairs = len([line for line in config_list if parse_config_line(line) and parse_config_line(line).get("is_active", True)])
-        processed_pairs = 0
-        
+
         for cfg_line in config_list:
-            if self.should_stop:
+            if self._stop_event.is_set():
                 break
-            
-            # Периодически обновляем GUI во время обработки списка пар
-            self.window.update_idletasks()
-            
+
             cfg = parse_config_line(cfg_line)
             if cfg is None:
-                self._log_message(f"!ОШИБКА! : Строка конфигурации пропущена из-за неверного формата: '{cfg_line}'")
+                self._put_msg("log", text=f"!ОШИБКА! Строка конфигурации пропущена: '{cfg_line}'")
                 continue
-            
-            # Пропускаем неактивные пары
+
             if not cfg.get("is_active", True):
-                self._log_message(f"Пара пропущена (неактивна): {cfg['source_path']} → {cfg['dest_path']}")
+                self._put_msg("log", text=f"Пара пропущена (неактивна): {cfg['source_path']} → {cfg['dest_path']}")
                 logger.info(f"Пара пропущена (неактивна): {cfg['source_path']} → {cfg['dest_path']}")
                 continue
-            
-            processed_pairs += 1
+
             source_path = str(cfg["source_path"])
             dest_path = str(cfg["dest_path"])
             exclude_patterns = cfg.get("exclude_patterns") or []
             delete = self.deleting.get()
-            
+
             logger.debug(f"задача передана на исполнение: {source_path}, {dest_path}, delete={delete}, exclude={exclude_patterns}")
-            
-            # Выполняем синхронизацию
-            self._sync_single_pair(source_path, dest_path, delete, exclude_patterns)
-            
+            self._put_msg("log", text=f"---- Пара: {source_path} → {dest_path} ----")
+
+            result = sync_pair(
+                source_path,
+                dest_path,
+                delete=delete,
+                exclude_patterns=exclude_patterns,
+                progress_callback=progress_callback,
+                stop_check=stop_check
+            )
+
+            if result.was_cancelled:
+                self._put_msg("progress", value=0)
+                self._put_msg("log", text="Синхронизация прервана пользователем")
+                break
+
+            for error in result.errors:
+                self._put_msg("error", text=error)
+
+            self._put_msg("progress", value=100)
             logger.debug(f"задача завершена: {source_path}, {dest_path}, delete={delete}, exclude={exclude_patterns}")
-            
-            # Обновляем GUI после каждой пары
-            self.window.update_idletasks()
-        
-        self.is_syncing = False
-        self.btn_start.config(text="Старт")
-        self.btn_settings.config(state="normal")
-        
-        end_timer = time.time() - start_timer
-        self._log_message(f"Синхронизация списка завершена за {end_timer} секунд")
-        logger.info(f"Синхронизация списка завершена за {end_timer} секунд")
-        self.prbr.configure(value=0)
-        self.window.update()
-    
-    def _stop_sync(self):
-        """Остановка синхронизации"""
-        self.should_stop = True
-        self._log_message("Остановка синхронизации...")
-    
-    def _sync_single_pair(self, source_folder, dest_folder, delete, exclude_patterns):
-        """Синхронизация одной пары папок"""
-        start_time = time.time()
-        
-        self.prbr.configure(value=0)
-        self.window.update()
-        
-        logger.info(f"Задача синхронизации запущена: {source_folder} → {dest_folder}")
-        self._log_message(f"---- Пара: {source_folder} → {dest_folder} ----")
-        
-        def progress_callback(progress, message):
-            """Callback для обновления прогресса"""
-            self.prbr.configure(value=progress)
-            if message:
-                now = dt.now().strftime("%H:%M:%S:%f")
-                self._log_message(f"{now}: {message}")
-            # Принудительное обновление GUI для предотвращения зависаний
-            self.window.update_idletasks()
-            self.window.update()
-        
-        def stop_check():
-            """Проверка необходимости остановки"""
-            return self.should_stop
-        
-        # Выполняем синхронизацию через sync_core
-        result = sync_pair(
-            source_folder,
-            dest_folder,
-            delete=delete,
-            exclude_patterns=exclude_patterns,
-            progress_callback=progress_callback,
-            stop_check=stop_check
-        )
-        
-        if result.was_cancelled:
-            self.prbr.configure(value=0)
-            self._log_message("Синхронизация прервана пользователем")
-            return
-        
-        # Выводим ошибки, если есть
-        for error in result.errors:
-            now = dt.now().strftime("%H:%M:%S:%f")
-            self._log_message(f"{now}: !ОШИБКА! {error}")
-        
-        self.prbr.configure(value=100)
-        self.window.update()
-        
-        end_time = time.time() - start_time
-        now = dt.now().strftime("%H:%M:%S:%f")
-        self._log_message(f"{now}: Синхронизация завершена за {end_time} секунд")
-        logger.info(f"Синхронизация завершена за {end_time} секунд")
-        logger.info(f"Задача синхронизации завершена: {source_folder} → {dest_folder}, delete={delete}")
-    
-    def _log_message(self, message):
-        """Добавляет сообщение в текстовую область"""
-        now = dt.now().strftime("%H:%M:%S:%f")
-        self.textarea.insert('end', f"\n{now}: {message}\n")
-        self.textarea.see('end')
-        self.window.update()
-    
+
+        elapsed = time.time() - start_timer
+        self._put_msg("done", elapsed=elapsed)
+
     def _on_close(self):
-        """Обработчик закрытия окна"""
+        if self.is_syncing:
+            self._stop_event.set()
+            self._sync_thread.join(timeout=3)
         logger.info("Программа остановлена.")
         self.window.destroy()
-    
+
     def run(self):
-        """Запуск главного цикла приложения"""
         self.window.mainloop()
