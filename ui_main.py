@@ -9,11 +9,20 @@ from tkinter import ttk
 import tkinter as tk
 import threading
 import queue
+import sys
+import os
 import time
 
 from config_manager import ConfigManager, parse_config_line
 from sync_core import sync_pair
 from ui_settings import SettingsWindow
+
+
+def _resource_path(relative_path):
+    """Получает абсолютный путь к ресурсу (работает и для exe, и для исходников)."""
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath('.'), relative_path)
 
 
 class MainWindow:
@@ -52,9 +61,10 @@ class MainWindow:
         self.window.resizable(False, False)
 
         try:
-            self.window.iconbitmap(self.ICON_PATH)
-        except:
-            logger.error(f"не найден файл иконки в папке запуска программы {Path(self.ICON_PATH).absolute()}")
+            icon_path = _resource_path(self.ICON_PATH)
+            self.window.iconbitmap(icon_path)
+        except Exception as e:
+            logger.error(f"не удалось загрузить иконку: {e}")
 
         self.window.config(bg=self.BG_COLOR)
 

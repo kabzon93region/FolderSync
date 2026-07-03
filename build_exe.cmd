@@ -27,6 +27,7 @@ venv\Scripts\python.exe -m PyInstaller ^
     --name "FolderSync" ^
     --icon "main.ico" ^
     --add-data "config.cfg;." ^
+    --add-data "main.ico;." ^
     main.py
 
 if %ERRORLEVEL% NEQ 0 (
